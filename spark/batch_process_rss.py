@@ -76,6 +76,7 @@ def main(day):
     df = get_document(df)
     df = get_sentiment(df)
     df = get_ner(df)
+    df.show(1,vertical=True,truncate=False)
     df.write.partitionBy(["day", "channel_code"]).parquet("/user/spark/rss_processed")
 
 
@@ -89,8 +90,13 @@ def validate_date_format(date_str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process and dump rss data for a given day")
-    parser.add_argument('--day', type=validate_date_format, required=True, help='Date in the format yyyy-MM-dd')
+    parser.add_argument(
+        '--day',
+        type=validate_date_format,
+        default=datetime.today().strftime('%Y-%m-%d'),
+        help='Date in the format yyyy-MM-dd'
+    )
 
     args = parser.parse_args()
 
-    main(args.day)
+    main(datetime.strptime(args.day, '%Y-%m-%d'))
