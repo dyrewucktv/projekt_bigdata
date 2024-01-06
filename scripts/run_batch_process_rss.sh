@@ -1,0 +1,1 @@
+/usr/local/spark-3.1.2-bin-hadoop2.7/bin/spark-submit --master yarn --deploy-mode cluster --name batch_process_rss --packages com.johnsnowlabs.nlp:spark-nlp_2.12:5.2.2 $HOME/batch_process_rss.py
