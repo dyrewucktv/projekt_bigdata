@@ -20,7 +20,7 @@ for topic in "${TOPICS[@]}"; do
   fi
 done
 
-for existing_topic in "${existing_topics[@]}"; do
+for existing_topic in ${existing_topics[@]}; do
   if [[ ! " ${TOPICS[*]} " =~ ${existing_topic} ]]; then
     echo "deleting topic ${existing_topic}"
     ${KAFKA_TOPICS} --bootstrap-server ${BOOTSTRAP_SERVER} --topic "${existing_topic}" --delete
