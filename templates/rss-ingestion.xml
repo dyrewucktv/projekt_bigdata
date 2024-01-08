@@ -2,7 +2,7 @@
 <template encoding-version="1.3">
     <description></description>
     <groupId>d9d9190b-018c-1000-84eb-bc67d09d17e8</groupId>
-    <name>niger</name>
+    <name>rss ingestion</name>
     <snippet>
         <connections>
             <id>0efb6bcb-b409-39f4-0000-000000000000</id>
