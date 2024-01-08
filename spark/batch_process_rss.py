@@ -24,11 +24,11 @@ def main(day):
     rss_frame = spark.read.parquet("/user/nifi/rss") \
         .filter(col("day") == f"{day.year:04}-{day.month:02}-{day.day:02}")
     rss_frame = rss_frame.select(
-        "channel_title",
+        "title",
         "link",
         "description",
         "pubDate",
-        "channel_category",
+        "channel_code",
         "day"
     ).distinct()
 
@@ -41,7 +41,20 @@ def main(day):
     rss_frame.printSchema()
 
     logger.info("Writing output")
-    rss_frame.write.mode("overwrite").saveAsTable("projekt.rss_with_sentiment")
+    rss_frame \
+        .select(
+            "title",
+            "link",
+            "description",
+            "pubDate",
+            "sentiment",
+            "channel_code",
+            "day"
+        ) \
+        .write \
+        .partitionBy("channel_code", "day") \
+        .mode("overwrite") \
+        .saveAsTable("projekt.rss_with_sentiment")
 
     logger.info("Adding companies columns")
     logger.info("Processing config file")
@@ -64,7 +77,21 @@ def main(day):
     rss_frame.printSchema()
 
     logger.info("Writing output")
-    rss_frame.write.mode("overwrite").saveAsTable("projekt.rss_with_companies_mentions")
+    rss_frame \
+        .select(
+            "title",
+            "link",
+            "description",
+            "pubDate",
+            "sentiment",
+            *[f"is_{name}_mentioned" for name, _ in companies_items],
+            "day",
+            "channel_code",
+        ) \
+        .write \
+        .partitionBy("day", "channel_code") \
+        .mode("overwrite") \
+        .saveAsTable("projekt.rss_with_companies_mentions")
     logger.info("Finished")
 
 def validate_date_format(date_str):
