@@ -10,9 +10,9 @@ from pathlib import Path
 from threading import Lock, Thread
 from time import sleep
 
-raw_data_path = Path("/home/vagrant/projekt/data/raw/finance/online")
+raw_data_path = Path("/home/vagrant/projekt_bigdata/data/raw/finance/online")
 last_ticks_timestamps_file = raw_data_path / "last_loaded_ticks.json"
-companies_file = Path("/home/vagrant/projekt/config") / "companies.yaml"
+companies_file = Path("/home/vagrant/projekt_bigdata/config") / "companies.yaml"
 tick_update_lock = Lock()
 
 
