@@ -1,84 +1,98 @@
 import argparse
 from datetime import datetime
+import yaml
 
-from pyspark.ml import Pipeline
+from loguru import logger
+from operator import itemgetter
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
-from sparknlp.annotator import Tokenizer, WordEmbeddingsModel, NerDLModel, NerConverter, UniversalSentenceEncoder, \
-    SentimentDLModel
-from sparknlp.base.document_assembler import DocumentAssembler
+from pyspark.sql.functions import *
 
-
-def get_document(df):
-    document_assembler = DocumentAssembler().setInputCol("description").setOutputCol("document")
-    return document_assembler.transform(df)
-
-
-def get_ner(df):
-    tokenizer = Tokenizer() \
-        .setInputCols(["document"]) \
-        .setOutputCol("token")
-    embeddings = WordEmbeddingsModel \
-        .pretrained("glove_100d") \
-        .setInputCols(["document", "token"]) \
-        .setOutputCol("embeddings")
-
-    ner_model = NerDLModel \
-        .pretrained("onto_100", "en") \
-        .setInputCols(["document", "token", "embeddings"]) \
-        .setOutputCol("ner")
-
-    ner_converter = NerConverter() \
-        .setInputCols(["document", "token", "ner"]) \
-        .setOutputCol("ner_chunk")
-
-    pipeline = Pipeline(
-        stages=[
-            tokenizer,
-            embeddings,
-            ner_model,
-            ner_converter
-        ]
-    )
-
-    result = pipeline.fit(df).transform(df)
-    return result
-
-
-def get_sentiment(df):
-    encoder = UniversalSentenceEncoder.pretrained(name="tfhub_use", lang="en") \
-        .setInputCols(["document"]) \
-        .setOutputCol("sentence_embeddings")
-    sentimentdl = SentimentDLModel.pretrained(name="sentimentdl_use_twitter", lang="en") \
-        .setInputCols(["sentence_embeddings"]) \
-        .setOutputCol("sentiment")
-    pipeline = Pipeline(
-        stages=[
-            encoder,
-            sentimentdl
-        ])
-    result = pipeline.fit(df).transform(df)
-    return result
-
+from udfs import clean_html_text, sentiment
 
 def main(day):
+    logger.info("Initializing spark session")
     spark = SparkSession \
         .builder \
+        .config("deploy-mode", "cluster") \
         .appName("Batch Process rss") \
-        .config("spark.jars.packages", "com.johnsnowlabs.nlp:spark-nlp_2.12:5.2.2") \
+        .master("local[2]") \
+        .enableHiveSupport() \
         .getOrCreate()
 
-    df = spark \
-        .read \
-        .options(inferSchema=True) \
-        .parquet("/user/nifi/rss/") \
+    
+    logger.info("Reading input data")
+    rss_frame = spark.read.parquet("/user/nifi/rss") \
         .filter(col("day") == f"{day.year:04}-{day.month:02}-{day.day:02}")
-    df = get_document(df)
-    df = get_sentiment(df)
-    df = get_ner(df)
-    df.show(1,vertical=True,truncate=False)
-    df.write.partitionBy(["day", "channel_code"]).parquet("/user/spark/rss_processed")
+    rss_frame = rss_frame.select(
+        "title",
+        "link",
+        "description",
+        "pubDate",
+        "channel_code",
+        "day"
+    ).distinct()
 
+    logger.info("Preprocessing text and sentiment")
+    rss_frame = rss_frame \
+        .withColumn("description", clean_html_text(col("description"))) \
+        .withColumn("sentiment", sentiment(col("description")))
+
+    logger.info("Output schema")
+    rss_frame.printSchema()
+
+    logger.info("Writing output")
+    rss_frame \
+        .select(
+            "title",
+            "link",
+            "description",
+            "pubDate",
+            "sentiment",
+            "channel_code",
+            "day"
+        ) \
+        .write \
+        .partitionBy("channel_code", "day") \
+        .mode("overwrite") \
+        .saveAsTable("projekt.rss_with_sentiment")
+
+    logger.info("Adding companies columns")
+    logger.info("Processing config file")
+    with open("config/companies_names.yaml") as f:
+        companies_names = yaml.load(f, Loader=yaml.CLoader)
+    companies_items = companies_names.items()
+    companies_items = sorted(companies_items, key=itemgetter(0))
+    
+    logger.info("Adding companies mentions columns")
+    rss_frame = spark.sql("SELECT * FROM projekt.rss_with_sentiment")
+    for name, company_regex in companies_items:
+        rss_frame = rss_frame.withColumn(
+            f"is_{name}_mentioned",
+            when(
+                upper(col("description")).rlike(company_regex.upper()), 1
+            ).otherwise(0)
+        )
+    
+    logger.info("Output schema")
+    rss_frame.printSchema()
+
+    logger.info("Writing output")
+    rss_frame \
+        .select(
+            "title",
+            "link",
+            "description",
+            "pubDate",
+            "sentiment",
+            *[f"is_{name}_mentioned" for name, _ in companies_items],
+            "day",
+            "channel_code",
+        ) \
+        .write \
+        .partitionBy("day", "channel_code") \
+        .mode("overwrite") \
+        .saveAsTable("projekt.rss_with_companies_mentions")
+    logger.info("Finished")
 
 def validate_date_format(date_str):
     try:
@@ -86,7 +100,6 @@ def validate_date_format(date_str):
         return date_str
     except ValueError:
         raise argparse.ArgumentTypeError(f"Invalid date format. Please use 'yyyy-MM-dd'.")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process and dump rss data for a given day")
