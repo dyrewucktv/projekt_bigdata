@@ -12,7 +12,7 @@ spark = SparkSession \
     .enableHiveSupport() \
     .getOrCreate()
 
-yfinance_history = spark.read.parquet("/user/vagrant/finance/history").filter("Date = '2024-01-08'")
+yfinance_history = spark.read.parquet("/user/vagrant/finance/history").where("Date >= '2024-01-08'")
 
 yfinance_history_aggregated = yfinance_history \
     .orderBy("Time") \
@@ -53,7 +53,13 @@ joined_data = yfinance_history_aggregated \
         join_condition 
         & (rss.RssDate == yfinance_history_aggregated.Date),
         "left"
-    )
+    ) \
+    .withColumn("partition_by_date", col("Date")) \
+    .withColumn("partition_by_company", col("Company"))
 
-joined_data.write.mode("overwrite").saveAsTable("projekt.yfinance_with_rss")
+joined_data \
+    .write \
+    .partitionBy("partition_by_date", "partition_by_company") \
+    .mode("overwrite") \
+    .saveAsTable("projekt.yfinance_with_rss")
 logger.info("Finished")
