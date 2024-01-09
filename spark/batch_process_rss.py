@@ -13,16 +13,15 @@ def main(day):
     logger.info("Initializing spark session")
     spark = SparkSession \
         .builder \
-        .config("deploy-mode", "cluster") \
         .appName("Batch Process rss") \
-        .master("local[2]") \
+        .master("local[*]") \
         .enableHiveSupport() \
         .getOrCreate()
 
     
     logger.info("Reading input data")
-    rss_frame = spark.read.parquet("/user/nifi/rss") \
-        .filter(col("day") == f"{day.year:04}-{day.month:02}-{day.day:02}")
+    rss_frame = spark.read.parquet("/user/nifi/rss")# \
+        #.filter(col("day") == f"{day.year:04}-{day.month:02}-{day.day:02}")
     rss_frame = rss_frame.select(
         "title",
         "link",
@@ -40,22 +39,6 @@ def main(day):
     logger.info("Output schema")
     rss_frame.printSchema()
 
-    logger.info("Writing output")
-    rss_frame \
-        .select(
-            "title",
-            "link",
-            "description",
-            "pubDate",
-            "sentiment",
-            "channel_code",
-            "day"
-        ) \
-        .write \
-        .partitionBy("channel_code", "day") \
-        .mode("overwrite") \
-        .saveAsTable("projekt.rss_with_sentiment")
-
     logger.info("Adding companies columns")
     logger.info("Processing config file")
     with open("config/companies_names.yaml") as f:
@@ -64,7 +47,6 @@ def main(day):
     companies_items = sorted(companies_items, key=itemgetter(0))
     
     logger.info("Adding companies mentions columns")
-    rss_frame = spark.sql("SELECT * FROM projekt.rss_with_sentiment")
     for name, company_regex in companies_items:
         rss_frame = rss_frame.withColumn(
             f"is_{name}_mentioned",
@@ -90,7 +72,7 @@ def main(day):
         ) \
         .write \
         .partitionBy("day", "channel_code") \
-        .mode("overwrite") \
+        .mode("append") \
         .saveAsTable("projekt.rss_with_companies_mentions")
     logger.info("Finished")
 

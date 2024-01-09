@@ -1,4 +1,4 @@
-TOPICS=("nifierror" "yfinance" "rss-ingestion-errors")
+TOPICS=("nifierror" "yfinance" "rss-ingestion-errors" "financial_windowed" "rss-parquets")
 KAFKA_TOPICS="/usr/local/kafka/bin/kafka-topics.sh"
 BOOTSTRAP_SERVER="node1:9092"
 
